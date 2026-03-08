@@ -3,14 +3,13 @@ use crate::{
     jwt::{Claims, verify_access_token},
 };
 use axum::{extract::FromRequestParts, http::request::Parts};
+use crate::state::AppState;
 
-impl<S> FromRequestParts<S> for Claims
-where
-    S: Send + Sync,
+impl FromRequestParts<AppState> for Claims
 {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
         let auth_header = parts
             .headers
             .get(axum::http::header::AUTHORIZATION)
@@ -29,6 +28,21 @@ where
             tracing::warn!("JWT validation failed: {:?}", e);
             AppError::Unauthorized("Invalid or expired token".to_string())
         })?;
+
+        // Checking Redis Blocklist
+        let mut redis_conn = state.redis.get_multiplexed_async_connection().await
+            .map_err(|_| AppError::Internal(anyhow::anyhow!("Redis error")))?;
+
+        let redis_key = format!("blocklist:{}", claims.jti);
+        let is_blocked: bool = redis::cmd("EXISTS")
+            .arg(&redis_key)
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or(false);
+
+        if is_blocked {
+            return Err(AppError::Unauthorized("Session has been terminated".to_string()));
+        }
 
         Ok(claims)
     }

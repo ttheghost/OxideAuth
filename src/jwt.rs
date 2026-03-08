@@ -11,6 +11,7 @@ pub struct Claims {
     pub role: String,
     pub exp: usize,
     pub iat: usize,
+    pub jti: Uuid,
 }
 
 pub fn generate_access_token(user_id: Uuid, role: &str) -> Result<(String, u64), jsonwebtoken::errors::Error> {
@@ -26,6 +27,7 @@ pub fn generate_access_token(user_id: Uuid, role: &str) -> Result<(String, u64),
         role: role.to_string(),
         exp,
         iat,
+        jti: Uuid::new_v4(),
     };
 
     let token = encode(

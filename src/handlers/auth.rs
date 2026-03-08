@@ -164,7 +164,12 @@ pub async fn refresh(
     .ok_or_else(|| AppError::Unauthorized("Invalid refresh token".to_string()))?;
 
     if record.revoked {
-        sqlx::query!("DELETE FROM refresh_tokens WHERE user_id = $1", record.user_id).execute(&mut *tx).await?;
+        sqlx::query!(
+            "DELETE FROM refresh_tokens WHERE user_id = $1",
+            record.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
         return Err(AppError::Unauthorized("Token has been revoked".to_string()));
     }
 
@@ -229,4 +234,38 @@ pub async fn refresh(
     headers.insert(SET_COOKIE, cookie_str.parse().unwrap());
 
     Ok((headers, Json(response_body)))
+}
+
+pub async fn logout(
+    State(state): State<AppState>,
+    claims: crate::jwt::Claims,
+    jar: CookieJar,
+) -> Result<(CookieJar, StatusCode), AppError> {
+    let now = chrono::Utc::now().timestamp() as usize;
+    let ttl = claims.exp.saturating_sub(now);
+
+    if ttl > 0 {
+        let mut redis_conn =
+            state.redis.get_multiplexed_async_connection().await.map_err(|e| {
+                AppError::Internal(anyhow::anyhow!("Redis connection failed: {}", e))
+            })?;
+
+        let redis_key = format!("blocklist:{}", claims.jti);
+        redis::cmd("SETEX")
+            .arg(&redis_key)
+            .arg(ttl)
+            .arg("true")
+            .query_async::<_>(&mut redis_conn)
+            .await
+            .map_err(|e| AppError::Redis(e))?
+    }
+
+    sqlx::query!("DELETE FROM refresh_tokens WHERE user_id = $1", claims.sub)
+        .execute(&state.db)
+        .await?;
+
+    let clean_jar = jar.remove(axum_extra::extract::cookie::Cookie::from("refresh_token"));
+
+    // Return 200 OK with the empty cookie jar
+    Ok((clean_jar, StatusCode::OK))
 }
