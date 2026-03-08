@@ -1,14 +1,13 @@
-mod state;
-mod models;
 mod handlers;
+mod models;
 mod routes;
+mod state;
+mod utils;
+mod error;
 
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::routing::{get, post};
-use axum::{Json, Router};
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
+use state::AppState;
 use std::env;
 use std::net::SocketAddr;
 use tracing::info;
@@ -33,20 +32,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max_connections(5)
         .connect(&database_url)
         .await?;
-    println!("Connected to PostgreSQL");
 
     info!("Connecting to Redis...");
     let redis_client = redis::Client::open(redis_url)?;
 
-    let state = state::AppState {
+    let state = AppState {
         db: db_pool,
         redis: redis_client,
     };
 
-    let app = Router::new()
-        .route("/health", get(health_check))
-        .route("/register", post(register))
-        .with_state(state);
+    let app = routes::create_router(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     info!("Server listening on {}", addr);
@@ -55,15 +50,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-async fn health_check() -> &'static str {
-    "OK"
-}
-
-async fn register(
-    State(state): State<state::AppState>,
-    Json(payload): Json<models::user::RegisterUserRequest>,
-) -> (StatusCode, Json<models::user::RegisterUserRequest>) {
-    (StatusCode::CREATED, Json(payload))
 }

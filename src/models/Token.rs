@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
-pub struct Token {
+pub struct DbToken {
     pub id: Uuid,
     pub user_id: Uuid,
     pub token_hash: String,
