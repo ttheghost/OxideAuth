@@ -4,6 +4,7 @@ mod routes;
 mod state;
 mod utils;
 mod error;
+mod jwt;
 
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;

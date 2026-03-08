@@ -9,11 +9,25 @@ pub enum UserRole {
     User,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub struct RegisterUserRequest {
     pub username: String,
     pub email: String,
     pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginUserRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: u64,
+    pub user: UserResponse,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
