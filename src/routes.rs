@@ -8,6 +8,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(|| async { "OK" }))
         .route("/register", post(auth::register))
         .route("/login", post(auth::login))
+        .route("/refresh", post(auth::refresh))
         .route("/me", get(users::get_me))
         .with_state(state)
 }

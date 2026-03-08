@@ -25,6 +25,7 @@ pub struct LoginUserRequest {
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub access_token: String,
+    pub refresh_token: Option<String>,
     pub token_type: String,
     pub expires_in: u64,
     pub user: UserResponse,

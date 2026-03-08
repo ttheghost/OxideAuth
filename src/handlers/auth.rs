@@ -8,8 +8,10 @@ use crate::utils::{hash_password, verify_password};
 use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header::SET_COOKIE};
+use axum_extra::extract::CookieJar;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::RngCore;
+use sha2::{Digest, Sha256};
 
 pub async fn register(
     State(state): State<AppState>,
@@ -114,6 +116,7 @@ pub async fn login(
 
     let response_body = AuthResponse {
         access_token,
+        refresh_token: Some(refresh_token.clone()),
         token_type: "Bearer".to_string(),
         expires_in,
         user: UserResponse::from(user),
@@ -124,6 +127,104 @@ pub async fn login(
     let cookie_str = format!(
         "refresh_token={}; HttpOnly; Secure; SameSite=Strict; Path=/login; Max-Age=604800",
         refresh_token
+    );
+    headers.insert(SET_COOKIE, cookie_str.parse().unwrap());
+
+    Ok((headers, Json(response_body)))
+}
+
+pub async fn refresh(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
+    let refresh_token = jar
+        .get("refresh_token")
+        .map(|cookie| cookie.value().to_string())
+        .ok_or_else(|| AppError::Unauthorized("No refresh token found".to_string()))?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(refresh_token.as_bytes());
+    let token_hash = format!("{:x}", hasher.finalize());
+
+    let mut tx = state.db.begin().await?;
+
+    let record = sqlx::query!(
+        r#"
+        SELECT 
+            rt.id as token_id, rt.user_id, rt.expires_at, rt.revoked,
+            u.role AS "role: crate::models::user::UserRole"
+        FROM refresh_tokens rt
+        JOIN users u ON rt.user_id = u.id
+        WHERE rt.token_hash = $1
+        "#,
+        token_hash
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("Invalid refresh token".to_string()))?;
+
+    if record.revoked {
+        sqlx::query!("DELETE FROM refresh_tokens WHERE user_id = $1", record.user_id).execute(&mut *tx).await?;
+        return Err(AppError::Unauthorized("Token has been revoked".to_string()));
+    }
+
+    if record.expires_at < chrono::Utc::now() {
+        return Err(AppError::Unauthorized("Refresh token expired".to_string()));
+    }
+
+    let role_str = match record.role {
+        UserRole::Admin => "admin",
+        UserRole::User => "user",
+    };
+
+    let (new_access_token, expires_in) = generate_access_token(record.user_id, role_str)
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to generate token")))?;
+
+    let mut new_rt_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut new_rt_bytes);
+    let new_refresh_token = URL_SAFE_NO_PAD.encode(new_rt_bytes);
+
+    let mut new_hasher = Sha256::new();
+    new_hasher.update(new_refresh_token.as_bytes());
+    let new_token_hash = format!("{:x}", new_hasher.finalize());
+    let new_expires_at = chrono::Utc::now() + chrono::Duration::days(7);
+
+    sqlx::query!("DELETE FROM refresh_tokens WHERE id = $1", record.token_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        "#,
+        record.user_id,
+        new_token_hash,
+        new_expires_at
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    let response_body = AuthResponse {
+        access_token: new_access_token,
+        refresh_token: None,
+        token_type: "Bearer".to_string(),
+        expires_in,
+        user: UserResponse {
+            id: record.user_id,
+            username: "".to_string(),
+            email: "".to_string(),
+            role: record.role,
+            created_at: chrono::Utc::now(),
+        },
+    };
+
+    let mut headers = HeaderMap::new();
+    let cookie_str = format!(
+        "refresh_token={}; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth; Max-Age=604800",
+        new_refresh_token
     );
     headers.insert(SET_COOKIE, cookie_str.parse().unwrap());
 
