@@ -1,15 +1,17 @@
-use axum::{routing::get, Router};
+mod state;
+mod models;
+mod handlers;
+mod routes;
+
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use dotenvy::dotenv;
+use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::net::SocketAddr;
-use sqlx::postgres::PgPoolOptions;
 use tracing::info;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db: sqlx::PgPool,
-    pub redis: redis::Client,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,13 +38,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Connecting to Redis...");
     let redis_client = redis::Client::open(redis_url)?;
 
-    let state = AppState {
+    let state = state::AppState {
         db: db_pool,
         redis: redis_client,
     };
 
     let app = Router::new()
         .route("/health", get(health_check))
+        .route("/register", post(register))
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -56,4 +59,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn health_check() -> &'static str {
     "OK"
+}
+
+async fn register(
+    State(state): State<state::AppState>,
+    Json(payload): Json<models::user::RegisterUserRequest>,
+) -> (StatusCode, Json<models::user::RegisterUserRequest>) {
+    (StatusCode::CREATED, Json(payload))
 }
