@@ -32,7 +32,7 @@ Designed as a robust backend microservice, it demonstrates systems-level perform
 
 1. **Clone the repository**
    ```bash
-   git clone [https://github.com/yourusername/oxide-auth.git](https://github.com/yourusername/oxide-auth.git)
+   git clone https://github.com/ttheghost/OxideAuth.git
    cd oxide-auth
    ```
 2. **Spin up the infrastructure (Postgres & Redis)**
@@ -49,7 +49,7 @@ Designed as a robust backend microservice, it demonstrates systems-level perform
 
 ## Author
 **Mohammed Ifkirne**
-- Website & Blog: 0xghost.dev
+- Website & Blog: [0xghost.dev](https://0xghost.dev/)
 
 ## License
 
