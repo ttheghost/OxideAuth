@@ -119,6 +119,7 @@ pub async fn login(
         user: UserResponse::from(user),
     };
 
+    // TODO: Make the cookie attributes configurable via environment variables (e.g., COOKIE_SAMESITE=Strict vs None)
     let mut headers = HeaderMap::new();
     let cookie_str = format!(
         "refresh_token={}; HttpOnly; Secure; SameSite=Strict; Path=/login; Max-Age=604800",

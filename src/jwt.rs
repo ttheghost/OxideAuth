@@ -1,4 +1,5 @@
 use jsonwebtoken::{encode, EncodingKey, Header};
+use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{Utc, Duration};
@@ -34,4 +35,18 @@ pub fn generate_access_token(user_id: Uuid, role: &str) -> Result<(String, u64),
     )?;
 
     Ok((token, expires_in_seconds as u64))
+}
+
+pub fn verify_access_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "super_secret_development_key".into());
+
+    let validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )?;
+
+    Ok(token_data.claims)
 }
